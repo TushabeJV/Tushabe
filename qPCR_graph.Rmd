@@ -1,0 +1,82 @@
+---
+title: "qPCR_graph"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#*** READING IN DATA ***#
+```{r }
+qpcrfino <- read.csv(file.choose())
+```
+
+# *** correlation of schisto by miseq and qpcr, 4th march 2019 ***#
+```{r }
+ggscatter(qpcrfino, x = "Quantity_AT1", y = "MiSeq_schisto.", conf.int = TRUE, cor.coef = TRUE, cor.method = "pearson", xlab = "Quantity of S.mansoni by qPCR", ylab = "S.mansoni % by MiSeq",color = "blue", add = "reg.line", main = "Correlation of S.mansoni quantity between MiSeq and qPCR", size = 0.5) + theme(plot.title = element_text(hjust = 0.5))
+```
+
+#*** comparing quantities by qpcr i.e cts and over all schisto quantity by qpcr ***#
+```{r }
+bwona <- as.data.frame(bwona)
+attach(bwona)
+ggscatter(qpcrfino, x = "Total.quantity_AT1.16S", y = "Quantity_AT1",cor.coef = TRUE, cor.method = "pearson", add = "reg.line", color = "blue", xlab = "Total DNA quantity", ylab = "Quantity of S.mansoni DNA") + theme(plot.title = element_text(hjust = 0.5))
+```
+
+## ploting individual cts
+```{r }
+ggqqplot(mycor$AT1_Ct, ylab = "AT1_CT")
+ggqqplot(mycor$Ct_16S, ylab = "CT_16S")
+
+test <- cor.test(mycor$AT1_Ct, mycor$Ct_16S, method = "pearson") 
+test2 <- cor.test(mycor$AT1_Ct, mycor$Ct_16S, method = "spearman") 
+```
+
+```{r miseq vs at1_ct}
+
+miseqct <- read.csv(file.choose())
+
+hist(miseqct$Ctat1)
+hist(miseqct$Miseq)
+
+ggscatter(miseqct, x = "Ctat1", y = "Miseq", conf.int = TRUE, cor.coef = TRUE, cor.method = "spearman", xlab = "Quantity_AT1", ylab = "MiSeq_%Schisto", add = "reg.line", palette = c("blue", "green"), color = "blue")
+```
+
+```{r 16s_ct vs at1_ct}
+
+require(graphics)
+ct_both <- read.csv(file.choose())
+head(ct_both)
+
+ggscatter(ct_both, x = "Quantity_AT1", y = "Quantity_16S", conf.int = TRUE, cor.coef = TRUE, cor.method = "pearson", xlab = "Quantity_AT1", ylab = "Quantity_16S", add = "reg.line", palette = c("blue", "green"), color = "blue")
+```
+
+
+```{r miseq_ratio calculation}
+
+miseq_ratio <- read.csv(file.choose())
+
+head(miseq_ratio)
+
+ggscatter(miseq_ratio, x = "Sum_at1_16s", y = "Miseq", conf.int = TRUE, cor.coef = TRUE, cor.method = "pearson", xlab = "Sum_CtAT1&Ct16S", ylab = "MiSeq_%Schistosoma mansoni", add = "reg.line", palette = c("blue", "green"), color = "blue", ellipse.level = 0.95, main = "Pearson correlation for MiSeq%S.mansoni vs sum quantity of AT1&16S")
+
+hist(miseq_ratio$Miseq)
+hist(miseq_ratio$Sum_at1_16s)
+```
+
+
+```{r miseq percentage vs qpcr percentage}
+
+percentages <- read.csv(file.choose())
+head(percentages)
+
+ggscatter(percentages, x = "qPCR_AT1", y = "Miseq", conf.int = TRUE, cor.coef = TRUE, cor.method = "spearman", xlab = "qPCR_%_Schisto", ylab = "MiSeq_%Schisto", add = "reg.line", palette = c("blue", "green"), color = "blue", main = "Spearman correlation for MiSeq%S.mansoni vs_%qPCR Schisto")
+```
+
+
+```{r STANDARDS}
+quant <- read.csv(file.choose())
+head(quant)
+```
+
