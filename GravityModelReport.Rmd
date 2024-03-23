@@ -1,0 +1,170 @@
+---
+title: "Analysing and Plotting geography data for John Vianney"
+classoption: landscape
+author: "Vianney"
+date: "10/06/2020"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F)
+```
+
+## R Markdown
+
+```{r}
+setwd("~/Work/Schistosoma/JohnVianney")
+setwd("~/Users/jt24")
+
+library(ggplot2)
+library(ggpubr)
+#multimodel inference
+library(MuMIn)
+library(knitr)
+library(dplyr)
+library(kableExtra)
+ data <- read.csv("~/PopGen_paper/Fst/fst_villages.csv")
+#needed to make sure all models fit to only 'complete' data
+options(na.action=na.fail)
+```
+
+The file fst_villages_2.csv is the same csv file John gave me, except that the village sizes are included in two columns (pop1 and pop2) - I'm only going to fit symmetric models, but seems sensivle to have pop1 and pop2 reflecting the villages in the same order as listed in the villages column.
+
+First thing I need to fix is that there are -ve fst values. For a first go, I've set them to a small number - half the smallest +ve value
+
+```{r}
+data$pos_fst <- data$fst
+data$pos_fst[data$pos_fst < 0] <- min(data$fst[data$fst > 0]) / 2
+```
+
+I also want to model these on a scale likely to reflect migration.
+
+$F_{st} = \frac{1}{4Nm +1}$
+
+e.g. Whitlock and McCauley, 1999, Heredity volume 82, pages 117–125. Its not a good estimator of Nm (The population size scaled migration rate).
+
+So I'll make a new variable, Nm, which is a transformation of the +Ve $F_{st}$ values:
+
+$Nm = \frac{1}{4}(\frac{1}{F_{st}} - 1)$
+
+```{r}
+data$Nm <- 0.25 * (( 1 / data$pos_fst) - 1 )
+```
+
+A typical gravity model models the number of migrants between populations in terms of the populations of two places and the distance between them:
+(e.g. http://ftp.iza.org/dp10329.pdf).
+
+for migration between $i$ and $j$ equal to $M_{ij}$ 
+
+$M_{ij} = G.\frac{P_i^a . P_j^b}{D_{ij}^Y}$
+
+where $P_i$ is the population of $i$, $D_{ij}$ is the distance between them, and $G$, $a$, $b$ and $Y$ are all estimated from the data.
+
+taking logs, this is estimated as a linear statistical model:
+
+$log(M_{ij}) = log(G) + a.log(P_i) + b.log(P_j) - Y.log(D_{ij}) + \epsilon$
+
+or for a symmetric model - which I think is appropriate as $F_{st}$ is symmetric:
+$log(M_{ij}) = log(G) + a.log(P_i.P_j) - Y.log(D_{ij}) + \epsilon$
+
+which looks good - only 4 parameters.
+We also need to include the 'within' vs 'between' island difference into our model, so my plan is to build a set of models that build on this gravity model by including a 'Location' factor for within vs. between and also some interactions - so the effect of population and distance, and the baseline (intercept) $F_{st}$ can vary for within and betwen island comparisons.
+
+I'll then look at the fit of each model, and see if the best models include this factor, population and/or distance.
+
+in R, the full (most complex model) looks like:
+
+```{r}
+full.model <- lm(log(Nm) ~ log(linear_distance_km)*location + log(pop1*pop2)*location ,data=data) 
+summary(full.model)
+```
+
+Notice, noone of the features here have small p-values. We can get a bit further: the MuMIn package has a nice function to generate all of the simpler models nested in this one, and rank them:
+
+```{r}
+d <- dredge(full.model)
+kable(d,digits=2) %>% kable_styling(bootstrap_options = "condensed",font_size = 6)
+```
+
+The best fitting model is the lowest AICc -- if you don't know about AIC, its very roughly a best-estimate of the average distance from truth a model prediction will be, in information-theoretic units that are 'globally' comparable.
+
+The best model contains location, as do 3 of the top 4 models, but its not completely clear - there is a good model that says none of our input variables affect $F_st$.
+
+What good thing to do is to estimate the variable 'importance' across all reasonable models. We can get something like a 99% confidence interval of models, and add up how often each variable appears in each of those models, weighted by how good the models are: so our best model gets the most say, etc.. that's the weight column here.
+
+```{r}
+good.models.99 <- get.models(d,cumsum(weight) <= .99)
+kable(sw(good.models.99))
+```
+
+So the interpretation here is that there is some weak evidence that distance and population size have some influence on $F_st$ the evidence that within- vs between- island is important is twice as strong.
+
+## $F_{st}$ plot
+
+I also wanted to show you what I meant about a 'correlation plot' style thing to show the $F_{st}$ numbers. here's something like what I had in mind.
+
+```{r tidy=FALSE}
+
+#split character vectors
+data$v1 <- sapply(strsplit(as.character(data$Villages),"_"),function(x) { x[1]})
+data$v2 <- sapply(strsplit(as.character(data$Villages),"_"),function(x) { x[2]})
+all_villages = unique(c(data$v1,data$v2))
+#make sure these have the same levels
+data$v1 <- factor(data$v1,levels=all_villages)
+data$v2 <- factor(data$v2,levels=all_villages)
+data$x <- factor(apply(cbind(data$v1,data$v2),1,function(x) all_villages[min(x)]),levels=all_villages)
+data$y <- factor(apply(cbind(data$v1,data$v2),1,function(x) all_villages[max(x)]),levels=all_villages)
+
+ggplot(data,aes(x=x,y=y,fill=fst,color=location,size=linear_distance_km) ) + geom_point(stroke=1.5,pch=21) + theme_minimal() +
+  scale_x_discrete(drop=FALSE) + scale_y_discrete(drop=FALSE) + scale_size_continuous(range=c(2,8),name="linear distance (km)")  + 
+  theme(axis.title.x = element_blank(),axis.title.y=element_blank(),axis.text.x=element_text(angle=-90, hjust=0,vjust=0.5)) + 
+  scale_color_manual(values=c("steelblue3","olivedrab3")) + scale_fill_distiller(palette = "YlOrBr",name=bquote(F[st]))
+```
+
+I think this might be better: 
+
+```{r tidy=FALSE}
+data$location <- c("within Damba island","between islands","between islands","within Damba island","within Koome island","between islands","within Damba island","between islands","within Damba island","between islands","between islands","between islands","within Koome island","between islands","within Damba island","between islands","between islands","within Koome island","between islands","between islands","between islands","within Koome island","between islands","between islands","between islands","between islands","between islands","between islands")
+
+ggplot(data,aes(x=x,y=y,color=fst,size=linear_distance_km,shape=location) ) + geom_point() + scale_shape_manual(values=c(16,17,18)) +
+  theme_minimal() + scale_x_discrete(drop=FALSE) + 
+  scale_y_discrete(drop=FALSE) + scale_size_continuous(range=c(2,8),name="linear distance (km)")  + 
+  theme(axis.title.x = element_blank(),axis.title.y=element_blank(),axis.text.x=element_text(angle=-90, hjust=0,vjust=0.5)) + scale_color_distiller(palette = "YlOrBr",name=bquote(F[st])) + ggtitle("Pairwise comparisons between Fst and linear distance among villages within and across islands") + theme(plot.title = element_text(hjust = 0.5))
+```
+
+and this is probably better, but no fun:
+
+```{r tidy=FALSE}
+
+ggplot(data,aes(y=fst,x=linear_distance_km,shape=location,color=location)) + geom_point(size=2) + scale_color_manual(name="",values=c("steelblue3","olivedrab3","green4")) + theme_bw() + scale_shape_discrete(name="",) +
+  guides(shape = guide_legend(override.aes =list(color=c("steelblue3","olivedrab3","green4")))) + 
+  ylab(bquote(F[st])) + xlab("linear distance (km)") + ggtitle("Fst for villages between and within islands versus pairwise linear distance between villages") + theme(plot.title = element_text(hjust = 0.5))
+
+#*****without title on figure4 with subscript Fst ****#
+
+ggplot(data,aes(y=fst,x=linear_distance_km,shape=location,color=location)) + geom_point(size=2) + scale_color_manual(name="",values=c("steelblue3","olivedrab3","green4")) + theme_bw() + scale_shape_discrete(name="",) +
+  guides(shape = guide_legend(override.aes =list(color=c("steelblue3","olivedrab3","green4")))) + 
+  ylab(bquote(F[st])) + xlab("linear distance (km)") + ggtitle(" ") + theme(plot.title = element_text(hjust = 0.5))
+
+```
+
+
+```{r  }
+ #:)
+```
+#KING code for kinship:
+#first convert VCF into a plink format that KING can read: (you can also do this step in plink in newer versions)
+#   vcftools-0.1.14 --vcf snps.allsites.dmed.liberal.diploid.biallelic.filt.LG3_DME_001.vcf --plink-tped
+#   plink --tfile out --make-bed --out ex
+#then run king - its something like this commadn: you might need to check the filenames, as i'm not sure this command was actually
+#run on the same analysis as the one above. The bedfile was made above It will make a text file with the estiamted relatedness #between each pair of input sampels - from memory, i think this ends in ibs0
+# /lustre/scratch118/infgen/team133/sd21/software/KINSHIP/king -b  
+# Dmed.Median_gtr10.filter.SNPS.selected.LowCoverageIndivsRemoved.maxmissingN5.dropHiMissingIndividual.bed --kinship --ibs (edited)
+
+```{r }
+
+```
+
+
